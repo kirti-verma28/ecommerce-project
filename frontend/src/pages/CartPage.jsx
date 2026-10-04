@@ -1,9 +1,10 @@
 import { useCart } from "../context/CartContext";
-import {Link} from "react-router-dom";
+import { Link } from "react-router-dom";
+import { imgUrl } from "../utils/imgUrl";
 
 function CartPage() {
     const { cartItems, total, removeFromCart, updateQuantity } = useCart();
-    const BASEURL = import.meta.env.VITE_DJANGO_BASE_URL;
+
     console.log("Cart Items:", cartItems);
 
     return (
@@ -21,7 +22,7 @@ function CartPage() {
                             <div className="flex items-center gap-4">
                                 {item.product_image && (
                                     <img
-                                        src={`${BASEURL}${item.product_image}`}
+                                        src={imgUrl(item.product_image)}
                                         alt={item.product_name}
                                         className="w-20 h-20 object-cover rounded"
                                     />
@@ -71,7 +72,7 @@ function CartPage() {
                         <h2 className="text-xl font-bold">Total:</h2>
                         <p className="text-xl font-semibold">${total.toFixed(2)}</p>
                         <Link to="/checkout" className="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition duration-300">
-                        Proceed to Checkout
+                            Proceed to Checkout
                         </Link>
                     </div>
                 </div>
