@@ -1,6 +1,7 @@
 import { useParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { useCart } from "../context/CartContext";
+import Loader from "../components/Loader";
 
 function ProductDetails() {
     const { id } = useParams();
@@ -30,7 +31,7 @@ function ProductDetails() {
     }, [id, BASEURL]);
 
     if (loading) {
-        return <div>Loading...</div>;
+        return <Loader />;
     }
     if (error) {
         return <div>Error: {error}</div>;
