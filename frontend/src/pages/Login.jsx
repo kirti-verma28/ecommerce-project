@@ -1,19 +1,25 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { saveTokens } from "../utils/auth";
 import { useCart } from "../context/CartContext";
+import AuthLayout from "../components/AuthLayout";
 
 function Login() {
   const BASE = import.meta.env.VITE_DJANGO_BASE_URL;
   const [form, setForm] = useState({ username: "", password: "" });
   const [msg, setMsg] = useState("");
+  const [isError, setIsError] = useState(false);
+  const [loading, setLoading] = useState(false);
   const nav = useNavigate();
   const { fetchCart } = useCart();
-  const handleChange = e => setForm({ ...form, [e.target.name]: e.target.value });
 
-  const handleSubmit = async e => {
+  const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setMsg("");
+    setIsError(false);
+    setLoading(true);
     try {
       const res = await fetch(`${BASE}/api/token/`, {
         method: "POST",
@@ -23,41 +29,68 @@ function Login() {
       const data = await res.json();
       if (res.ok) {
         saveTokens(data);
-        if (res.ok) {
-          saveTokens(data);
-          await fetchCart();
-          setMsg("Login successful!");
-          setTimeout(() => nav("/"), 800);
-        }
-        setMsg("Login successful!");
-        setTimeout(() => nav("/"), 800);
+        await fetchCart();
+        nav("/", { replace: true });
       } else {
-        setMsg(data.detail || "Invalid credentials");
+        setIsError(true);
+        setMsg(data.detail || "Incorrect username or password");
       }
     } catch (err) {
       console.error(err);
-      setMsg("Login failed");
+      setIsError(true);
+      setMsg("Could not connect to the server. Please try again in a moment.");
+    } finally {
+      setLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-6">
-      <div className="max-w-md w-full bg-white p-6 rounded shadow">
-        <h2 className="text-2xl font-bold mb-4">Login</h2>
-        <form onSubmit={handleSubmit} className="space-y-3">
-          <input name="username" onChange={handleChange} value={form.username} placeholder="Username" required className="w-full p-2 border rounded" />
-          <input name="password" type="password" onChange={handleChange} value={form.password} placeholder="Password" required className="w-full p-2 border rounded" />
-          <button className="w-full bg-blue-600 text-white py-2 rounded">Login</button>
-        </form>
-        {msg && <p className="mt-3 text-sm">{msg}</p>}
-        <div className="mt-4 text-sm">
-          Don't have an account?{" "}
-          <a href="/signup" className="text-blue-600 hover:underline">
-            Sign up
-          </a>
-        </div>
-      </div>
-    </div>
+    <AuthLayout
+      title="Login"
+      subtitle="Get access to your cart, orders and recommendations"
+    >
+      <form onSubmit={handleSubmit} className="space-y-6">
+        <input
+          name="username"
+          value={form.username}
+          onChange={handleChange}
+          placeholder="Username"
+          required
+          className="w-full border-b-2 border-gray-300 focus:border-blue-600 outline-none py-2"
+        />
+        <input
+          name="password"
+          type="password"
+          value={form.password}
+          onChange={handleChange}
+          placeholder="Password"
+          required
+          className="w-full border-b-2 border-gray-300 focus:border-blue-600 outline-none py-2"
+        />
+
+        {msg && (
+          <p className={`text-sm ${isError ? "text-red-600" : "text-green-700"}`}>{msg}</p>
+        )}
+
+        <button
+          disabled={loading}
+          className="w-full bg-orange-500 hover:bg-orange-600 text-white font-semibold py-3 rounded-sm disabled:opacity-60"
+        >
+          {loading ? "Logging in..." : "Login"}
+        </button>
+        {loading && (
+          <p className="text-xs text-gray-500 text-center">
+            The server may take up to a minute to wake up on the first try.
+          </p>
+        )}
+      </form>
+
+      <p className="mt-8 text-center">
+        <Link to="/signup" className="text-blue-600 font-semibold hover:underline">
+          New to KirtiCart? Create an account
+        </Link>
+      </p>
+    </AuthLayout>
   );
 }
 
