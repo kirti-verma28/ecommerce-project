@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router-dom";
 import ProductCard from "../components/ProductCard.jsx";
 import Loader from "../components/Loader";
 
-const PAGE_SIZE = 6;
+const PAGE_SIZE = 8;
 
 const SORT_OPTIONS = [
     { value: "-created_at", label: "Newest First" },
