@@ -6,13 +6,42 @@ from .serializers import RegisterSerializer, UserSerializer
 from rest_framework import status
 from .models import Product, Category, Cart, CartItem, Order, OrderItem
 from .serializers import ProductSerializer, CategorySerializer, CartSerializer, CartItemSerializer
+from decimal import Decimal, InvalidOperation
+from rest_framework import generics, filters
+from rest_framework.pagination import PageNumberPagination
 
-@api_view(['GET'])
-def get_products(request):
-    products = Product.objects.all()
-    serializer = ProductSerializer(products, many=True)
-    return Response(serializer.data)
+class ProductPagination(PageNumberPagination):
+    page_size = 12
+    page_size_query_param = "page_size"
+    max_page_size = 48
 
+
+class ProductListView(generics.ListAPIView):
+    serializer_class = ProductSerializer
+    permission_classes = [AllowAny]
+    pagination_class = ProductPagination
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ["name", "description", "category__name"]
+    ordering_fields = ["price", "created_at", "name"]
+    ordering = ["-created_at"]
+
+    def get_queryset(self):
+        qs = Product.objects.select_related("category")
+        params = self.request.query_params
+
+        category = params.get("category")
+        if category:
+            qs = qs.filter(category__slug=category)
+
+        for key, lookup in (("min_price", "price__gte"), ("max_price", "price__lte")):
+            value = params.get(key)
+            if value:
+                try:
+                    qs = qs.filter(**{lookup: Decimal(value)})
+                except InvalidOperation:
+                    pass  # ignore a price that is not a number
+        return qs
+    
 @api_view(['GET'])
 def get_product(request, pk):
     try:

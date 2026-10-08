@@ -18,7 +18,7 @@ function ProductList() {
             return response.json();
         })
         .then((data)=>{
-            setProducts(data);
+            setProducts(data.results);
             setLoading(false);
         })
         .catch((error)=>{
