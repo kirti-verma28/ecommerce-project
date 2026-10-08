@@ -5,9 +5,9 @@ const CartContext = createContext();
 export const CartProvider = ({ children }) => {
     const BASEURL = import.meta.env.VITE_DJANGO_BASE_URL;
     const [cartItems, setCartItems] = useState([]);
+    const [cartError, setCartError] = useState("");
 
-
-    //Fetch cart from BE
+    // Fetch cart from backend
     const fetchCart = async () => {
         if (!getAccessToken()) {
             setCartItems([]);
@@ -30,21 +30,31 @@ export const CartProvider = ({ children }) => {
         fetchCart();
     }, []);
 
+    const readError = async (res, fallback) => {
+        try {
+            const data = await res.json();
+            return data.error || data.detail || fallback;
+        } catch {
+            return fallback;
+        }
+    };
 
-    // Add product to cart
+    // Add product to cart. Returns { ok, error }
     const addToCart = async (productID) => {
         try {
-            await authFetch(`${BASEURL}/api/cart/add/`, {
+            const res = await authFetch(`${BASEURL}/api/cart/add/`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({ product_id: productID })
-
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ product_id: productID }),
             });
-            fetchCart();
+            if (!res.ok) {
+                return { ok: false, error: await readError(res, "Could not add to cart") };
+            }
+            await fetchCart();
+            return { ok: true };
         } catch (error) {
             console.error("Error adding to cart:", error);
+            return { ok: false, error: "Could not add to cart" };
         }
     };
 
@@ -53,12 +63,10 @@ export const CartProvider = ({ children }) => {
         try {
             await authFetch(`${BASEURL}/api/cart/remove/`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ item_id: itemId }),
             });
-            fetchCart();
+            await fetchCart();
         } catch (error) {
             console.error("Error removing from cart:", error);
         }
@@ -66,19 +74,21 @@ export const CartProvider = ({ children }) => {
 
     // Update quantity
     const updateQuantity = async (itemId, quantity) => {
+        setCartError("");
         if (quantity < 1) {
             await removeFromCart(itemId);
             return;
         }
         try {
-            await authFetch(`${BASEURL}/api/cart/update/`, {
+            const res = await authFetch(`${BASEURL}/api/cart/update/`, {
                 method: "POST",
-                headers: {
-                    "Content-Type": "application/json",
-                },
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ item_id: itemId, quantity }),
             });
-            fetchCart();
+            if (!res.ok) {
+                setCartError(await readError(res, "Could not update quantity"));
+            }
+            await fetchCart();
         } catch (error) {
             console.error("Error updating quantity:", error);
         }
@@ -86,8 +96,9 @@ export const CartProvider = ({ children }) => {
 
     const clearCart = () => {
         setCartItems([]);
+        setCartError("");
+    };
 
-    }
     // Total price
     const total = cartItems.reduce(
         (acc, item) => acc + Number(item.product_price) * item.quantity,
@@ -96,7 +107,16 @@ export const CartProvider = ({ children }) => {
 
     return (
         <CartContext.Provider
-            value={{ cartItems, total, addToCart, removeFromCart, updateQuantity, clearCart, fetchCart }}
+            value={{
+                cartItems,
+                total,
+                cartError,
+                addToCart,
+                removeFromCart,
+                updateQuantity,
+                clearCart,
+                fetchCart,
+            }}
         >
             {children}
         </CartContext.Provider>
