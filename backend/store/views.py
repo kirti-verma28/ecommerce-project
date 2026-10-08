@@ -2,23 +2,28 @@ from decimal import Decimal, InvalidOperation
 
 from django.contrib.auth.models import User
 from django.db import transaction
-from django.db.models import Avg, Count
+from django.db.models import Avg, Count, F
 from rest_framework import filters, generics, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
 
-from .models import Cart, CartItem, Category, Order, OrderItem, Product, Review
+from .models import (
+    Address, Cart, CartItem, Category, Order, OrderItem, Product, Review, WishlistItem,
+)
 from .serializers import (
+    AddressSerializer,
     CartItemSerializer,
     CartSerializer,
     CategorySerializer,
+    OrderSerializer,
     ProductSerializer,
     RegisterSerializer,
     ReviewSerializer,
     UserSerializer,
 )
+
 
 
 def product_queryset():
@@ -193,9 +198,17 @@ def update_cart_quantity(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_order(request):
-    phone = str(request.data.get('phone', ''))
-    if not phone.isdigit() or len(phone) < 10:
-        return Response({'error': 'Invalid phone number'}, status=400)
+    payment_method = request.data.get('payment_method', 'COD')
+    if payment_method != 'COD':
+        return Response(
+            {'error': 'Online payment is not available yet. Please choose Cash on Delivery.'},
+            status=400,
+        )
+
+    try:
+        address = Address.objects.get(id=request.data.get('address_id'), user=request.user)
+    except (Address.DoesNotExist, ValueError, TypeError):
+        return Response({'error': 'Please select a delivery address'}, status=400)
 
     with transaction.atomic():
         cart, _ = Cart.objects.get_or_create(user=request.user)
@@ -218,7 +231,17 @@ def create_order(request):
                 )
 
         total = sum(products[i.product_id].price * i.quantity for i in items)
-        order = Order.objects.create(user=request.user, total_amount=total)
+        order = Order.objects.create(
+            user=request.user,
+            total_amount=total,
+            payment_method='COD',
+            ship_name=address.full_name,
+            ship_phone=address.phone,
+            ship_address=address.address_line,
+            ship_city=address.city,
+            ship_state=address.state,
+            ship_pincode=address.pincode,
+        )
 
         for item in items:
             product = products[item.product_id]
@@ -235,7 +258,6 @@ def create_order(request):
 
     return Response({'message': 'Order created successfully', 'order_id': order.id})
 
-
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_view(request):
@@ -247,3 +269,107 @@ def register_view(request):
             status=status.HTTP_201_CREATED,
         )
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+# ---------- Addresses ----------
+
+class AddressListCreateView(generics.ListCreateAPIView):
+    serializer_class = AddressSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Address.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        has_addresses = Address.objects.filter(user=self.request.user).exists()
+        wants_default = serializer.validated_data.get('is_default', False)
+        # The first address becomes the default automatically
+        serializer.save(user=self.request.user, is_default=wants_default or not has_addresses)
+
+
+class AddressDetailView(generics.RetrieveUpdateDestroyAPIView):
+    serializer_class = AddressSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Address.objects.filter(user=self.request.user)
+
+    def perform_destroy(self, instance):
+        was_default = instance.is_default
+        user = instance.user
+        instance.delete()
+        if was_default:
+            next_address = Address.objects.filter(user=user).first()
+            if next_address:
+                next_address.is_default = True
+                next_address.save()
+
+
+# ---------- Orders ----------
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def my_orders(request):
+    orders = (
+        Order.objects.filter(user=request.user)
+        .prefetch_related('items__product')
+        .order_by('-created_at')
+    )
+    return Response(OrderSerializer(orders, many=True, context={'request': request}).data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def order_detail(request, pk):
+    try:
+        order = Order.objects.prefetch_related('items__product').get(id=pk, user=request.user)
+    except Order.DoesNotExist:
+        return Response({'error': 'Order not found'}, status=404)
+    return Response(OrderSerializer(order, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def cancel_order(request, pk):
+    with transaction.atomic():
+        try:
+            order = Order.objects.select_for_update().get(id=pk, user=request.user)
+        except Order.DoesNotExist:
+            return Response({'error': 'Order not found'}, status=404)
+
+        if not order.can_cancel:
+            return Response({'error': 'This order can no longer be cancelled'}, status=400)
+
+        # Put the items back into stock
+        for item in order.items.all():
+            Product.objects.filter(id=item.product_id).update(stock=F('stock') + item.quantity)
+
+        order.status = 'CANCELLED'
+        order.save(update_fields=['status'])
+
+    return Response(OrderSerializer(order, context={'request': request}).data)
+
+
+# ---------- Wishlist ----------
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_wishlist(request):
+    # Newest first (WishlistItem is ordered by -created_at)
+    ids = list(WishlistItem.objects.filter(user=request.user).values_list('product_id', flat=True))
+    products = {p.id: p for p in product_queryset().filter(id__in=ids)}
+    ordered = [products[i] for i in ids if i in products]
+    return Response(ProductSerializer(ordered, many=True, context={'request': request}).data)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def toggle_wishlist(request):
+    try:
+        product = Product.objects.get(id=request.data.get('product_id'))
+    except (Product.DoesNotExist, ValueError, TypeError):
+        return Response({'error': 'Product not found'}, status=404)
+
+    item, created = WishlistItem.objects.get_or_create(user=request.user, product=product)
+    if not created:
+        item.delete()
+    return Response({'in_wishlist': created})

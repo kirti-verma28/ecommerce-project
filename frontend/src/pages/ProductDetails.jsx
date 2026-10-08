@@ -6,6 +6,7 @@ import { imgUrl } from "../utils/imgUrl";
 import Loader from "../components/Loader";
 import ProductCard from "../components/ProductCard";
 import Stars from "../components/Stars";
+import WishlistButton from "../components/WishlistButton";
 
 function ProductDetails() {
     const { id } = useParams();
@@ -158,8 +159,10 @@ function ProductDetails() {
                         {/* Details */}
                         <div className="md:w-1/2">
                             <p className="text-sm text-gray-500">{product.category?.name}</p>
-                            <h1 className="text-3xl font-bold text-gray-800 mb-2">{product.name}</h1>
-
+                            <div className="flex items-start justify-between gap-3">
+                                <h1 className="text-3xl font-bold text-gray-800 mb-2">{product.name}</h1>
+                                <WishlistButton productId={product.id} className="text-3xl" />
+                            </div>
                             <div className="flex items-center gap-2 mb-4">
                                 {product.review_count > 0 ? (
                                     <>

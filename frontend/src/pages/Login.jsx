@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { saveTokens } from "../utils/auth";
 import { useCart } from "../context/CartContext";
 import AuthLayout from "../components/AuthLayout";
+import { useWishlist } from "../context/WishlistContext";
 
 function Login() {
   const BASE = import.meta.env.VITE_DJANGO_BASE_URL;
@@ -12,7 +13,7 @@ function Login() {
   const [loading, setLoading] = useState(false);
   const nav = useNavigate();
   const { fetchCart } = useCart();
-
+  const { fetchWishlist } = useWishlist();
   const handleChange = (e) => setForm({ ...form, [e.target.name]: e.target.value });
 
   const handleSubmit = async (e) => {
@@ -30,6 +31,7 @@ function Login() {
       if (res.ok) {
         saveTokens(data);
         await fetchCart();
+        await fetchWishlist();
         nav("/", { replace: true });
       } else {
         setIsError(true);

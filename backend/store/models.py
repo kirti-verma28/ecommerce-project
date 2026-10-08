@@ -71,9 +71,33 @@ class UserProfile(models.Model):
 
 
 class Order(models.Model):
+    STATUS_CHOICES = [
+        ('PLACED', 'Placed'),
+        ('CONFIRMED', 'Confirmed'),
+        ('SHIPPED', 'Shipped'),
+        ('DELIVERED', 'Delivered'),
+        ('CANCELLED', 'Cancelled'),
+    ]
+    CANCELLABLE_STATUSES = ('PLACED', 'CONFIRMED')
+
     user = models.ForeignKey(User, on_delete=models.CASCADE, null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PLACED')
+    payment_method = models.CharField(max_length=10, default='COD')
+
+    # Delivery details are copied into the order, so editing a saved address later
+    # does not change old orders.
+    ship_name = models.CharField(max_length=100, default='', blank=True)
+    ship_phone = models.CharField(max_length=15, default='', blank=True)
+    ship_address = models.TextField(default='', blank=True)
+    ship_city = models.CharField(max_length=100, default='', blank=True)
+    ship_state = models.CharField(max_length=100, default='', blank=True)
+    ship_pincode = models.CharField(max_length=10, default='', blank=True)
+
+    @property
+    def can_cancel(self):
+        return self.status in self.CANCELLABLE_STATUSES
 
     def __str__(self):
         return f"Order {self.id}"
@@ -112,3 +136,41 @@ class CartItem(models.Model):
 
     def __str__(self):
         return f"{self.product.name} × {self.quantity}"
+
+class Address(models.Model):
+    user = models.ForeignKey(User, related_name='addresses', on_delete=models.CASCADE)
+    full_name = models.CharField(max_length=100)
+    phone = models.CharField(max_length=15)
+    address_line = models.TextField()
+    city = models.CharField(max_length=100)
+    state = models.CharField(max_length=100)
+    pincode = models.CharField(max_length=10)
+    is_default = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-is_default', '-created_at']
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
+        # Only one default address per user
+        if self.is_default:
+            Address.objects.filter(user=self.user).exclude(pk=self.pk).update(is_default=False)
+
+    def __str__(self):
+        return f"{self.full_name}, {self.city}"
+
+
+class WishlistItem(models.Model):
+    user = models.ForeignKey(User, related_name='wishlist_items', on_delete=models.CASCADE)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'product'], name='unique_wishlist_item'),
+        ]
+
+    def __str__(self):
+        return f"{self.user.username} likes {self.product.name}"

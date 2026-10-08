@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useCart } from '../context/CartContext.jsx';
+import { useWishlist } from '../context/WishlistContext.jsx';
 import { clearTokens } from '../utils/auth.js';
 
 function Navbar() {
     const { cartItems, clearCart } = useCart();
+    const { ids, clearWishlist } = useWishlist();
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const [query, setQuery] = useState(searchParams.get('search') || '');
@@ -25,8 +27,11 @@ function Navbar() {
     const handleLogout = () => {
         clearTokens();
         clearCart();
+        clearWishlist();
         navigate('/login', { replace: true });
     };
+
+    const linkClass = 'text-gray-800 hover:text-gray-600 font-medium text-sm whitespace-nowrap';
 
     return (
         <nav className='bg-white shadow-md px-6 py-4 flex items-center gap-6 fixed w-full top-0 z-50'>
@@ -46,16 +51,26 @@ function Navbar() {
                 </button>
             </form>
 
-            <div className='flex items-center gap-6 ml-auto'>
-                <Link to='/cart' className='relative text-gray-800 hover:text-gray-600 font-medium'>
+            <div className='flex items-center gap-5 ml-auto'>
+                <Link to='/orders' className={linkClass}>Orders</Link>
+                <Link to='/wishlist' className={`relative ${linkClass}`}>
+                    ♥ Wishlist
+                    {ids.length > 0 && (
+                        <span className='absolute -top-2 -right-4 bg-red-500 text-white text-xs font-bold rounded-full px-2'>
+                            {ids.length}
+                        </span>
+                    )}
+                </Link>
+                <Link to='/account' className={linkClass}>Account</Link>
+                <Link to='/cart' className={`relative ${linkClass}`}>
                     🛒 Cart
                     {cartCount > 0 && (
-                        <span className='absolute -top-2 -right-3 bg-red-500 text-white text-xs font-bold rounded-full px-2'>
+                        <span className='absolute -top-2 -right-4 bg-red-500 text-white text-xs font-bold rounded-full px-2'>
                             {cartCount}
                         </span>
                     )}
                 </Link>
-                <button onClick={handleLogout} className='text-gray-800 hover:text-gray-600 font-medium'>
+                <button onClick={handleLogout} className={linkClass}>
                     Logout
                 </button>
             </div>

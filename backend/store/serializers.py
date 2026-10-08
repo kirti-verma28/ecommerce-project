@@ -1,7 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Product, ProductImage, Category, Cart, CartItem, Review
-
+from .models import Product, ProductImage, Category, Cart, CartItem, Review, Address, Order, OrderItem
 
 class CategorySerializer(serializers.ModelSerializer):
     class Meta:
@@ -92,3 +91,45 @@ class RegisterSerializer(serializers.ModelSerializer):
         password = validated_data['password']
         user = User.objects.create_user(username=username, email=email, password=password)
         return user
+
+class AddressSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Address
+        fields = ['id', 'full_name', 'phone', 'address_line', 'city', 'state', 'pincode', 'is_default']
+
+    def validate_phone(self, value):
+        if not value.isdigit() or len(value) < 10:
+            raise serializers.ValidationError("Enter a valid phone number (at least 10 digits).")
+        return value
+
+    def validate_pincode(self, value):
+        if not (value.isdigit() and len(value) == 6):
+            raise serializers.ValidationError("Enter a valid 6-digit pincode.")
+        return value
+
+
+class OrderItemSerializer(serializers.ModelSerializer):
+    product_name = serializers.CharField(source='product.name', read_only=True)
+    product_image = serializers.ImageField(source='product.image', read_only=True)
+    subtotal = serializers.SerializerMethodField()
+
+    class Meta:
+        model = OrderItem
+        fields = ['id', 'product', 'product_name', 'product_image', 'quantity', 'price', 'subtotal']
+
+    def get_subtotal(self, obj):
+        return obj.price * obj.quantity
+
+
+class OrderSerializer(serializers.ModelSerializer):
+    items = OrderItemSerializer(many=True, read_only=True)
+    status_display = serializers.CharField(source='get_status_display', read_only=True)
+    can_cancel = serializers.BooleanField(read_only=True)
+
+    class Meta:
+        model = Order
+        fields = [
+            'id', 'created_at', 'total_amount', 'status', 'status_display', 'payment_method',
+            'ship_name', 'ship_phone', 'ship_address', 'ship_city', 'ship_state', 'ship_pincode',
+            'items', 'can_cancel',
+        ]

@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import { imgUrl } from "../utils/imgUrl";
+import WishlistButton from "./WishlistButton";
 
 function ProductCard({ product }) {
   const outOfStock = product.stock < 1;
@@ -10,9 +11,14 @@ function ProductCard({ product }) {
       <div className="bg-white rounded-xl shadow-md hover:shadow-lg hover:scale-[1.02] transition-transform p-4 cursor-pointer h-full">
         <div className="relative">
           <img
+
             src={imgUrl(product.image)}
             alt={product.name}
             className="w-full h-56 object-cover rounded-lg mb-4 bg-gray-100"
+          />
+          <WishlistButton
+            productId={product.id}
+            className="absolute top-2 right-2 bg-white rounded-full w-9 h-9 flex items-center justify-center shadow text-xl"
           />
           {outOfStock && (
             <span className="absolute top-2 left-2 bg-red-600 text-white text-xs font-semibold px-2 py-1 rounded">
