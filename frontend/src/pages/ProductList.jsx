@@ -3,6 +3,8 @@ import { useSearchParams } from "react-router-dom";
 import ProductCard from "../components/ProductCard.jsx";
 import Loader from "../components/Loader";
 
+const PAGE_SIZE = 6;
+
 const SORT_OPTIONS = [
     { value: "-created_at", label: "Newest First" },
     { value: "price", label: "Price: Low to High" },
@@ -16,16 +18,30 @@ const pillClass = (active) =>
         : "bg-white text-gray-700 border-gray-300 hover:border-blue-600"
     }`;
 
+// Example: 1 ... 4 5 6 ... 12
+const getPageNumbers = (current, total) => {
+    const pages = [];
+    for (let i = 1; i <= total; i++) {
+        if (i === 1 || i === total || Math.abs(i - current) <= 1) {
+            pages.push(i);
+        } else if (pages[pages.length - 1] !== "...") {
+            pages.push("...");
+        }
+    }
+    return pages;
+};
+
 function ProductList() {
     const BASEURL = import.meta.env.VITE_DJANGO_BASE_URL;
     const [searchParams, setSearchParams] = useSearchParams();
 
-    // Filters live in the URL
+    // Filters and page live in the URL
     const search = searchParams.get("search") || "";
     const category = searchParams.get("category") || "";
     const ordering = searchParams.get("ordering") || "-created_at";
     const minPrice = searchParams.get("min_price") || "";
     const maxPrice = searchParams.get("max_price") || "";
+    const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10) || 1);
 
     const [products, setProducts] = useState([]);
     const [count, setCount] = useState(0);
@@ -43,6 +59,7 @@ function ProductList() {
         const next = new URLSearchParams(searchParams);
         if (value) next.set(key, value);
         else next.delete(key);
+        if (key !== "page") next.delete("page"); // a new filter starts from page 1
         setSearchParams(next);
     };
 
@@ -53,6 +70,7 @@ function ProductList() {
         else next.delete("min_price");
         if (priceForm.max) next.set("max_price", priceForm.max);
         else next.delete("max_price");
+        next.delete("page");
         setSearchParams(next);
     };
 
@@ -64,7 +82,7 @@ function ProductList() {
             .catch(() => setCategories([]));
     }, [BASEURL]);
 
-    // Products (every time a filter changes)
+    // Products (every time a filter or the page changes)
     useEffect(() => {
         const controller = new AbortController();
         const params = new URLSearchParams();
@@ -73,9 +91,12 @@ function ProductList() {
         if (minPrice) params.set("min_price", minPrice);
         if (maxPrice) params.set("max_price", maxPrice);
         params.set("ordering", ordering);
+        params.set("page", page);
+        params.set("page_size", PAGE_SIZE);
 
         setLoading(true);
         setError(null);
+        window.scrollTo({ top: 0, behavior: "smooth" });
 
         fetch(`${BASEURL}/api/products/?${params.toString()}`, { signal: controller.signal })
             .then((response) => {
@@ -98,7 +119,7 @@ function ProductList() {
             });
 
         return () => controller.abort();
-    }, [BASEURL, search, category, ordering, minPrice, maxPrice]);
+    }, [BASEURL, search, category, ordering, minPrice, maxPrice, page]);
 
     if (initialLoading) {
         return <Loader />;
@@ -109,6 +130,7 @@ function ProductList() {
     }
 
     const hasFilters = search || category || minPrice || maxPrice;
+    const totalPages = Math.max(1, Math.ceil(count / PAGE_SIZE));
 
     return (
         <div className="min-h-screen bg-gray-100 pt-24 pb-10">
@@ -184,6 +206,7 @@ function ProductList() {
 
                 <p className="text-gray-600 mb-4">
                     {search ? `Showing results for "${search}"` : "All products"} ({count})
+                    {totalPages > 1 && ` - Page ${page} of ${totalPages}`}
                 </p>
 
                 {/* Product grid */}
@@ -199,6 +222,43 @@ function ProductList() {
                         </p>
                     )}
                 </div>
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div className="flex justify-center items-center gap-2 mt-8 flex-wrap">
+                        <button
+                            disabled={page === 1}
+                            onClick={() => updateParam("page", String(page - 1))}
+                            className="px-4 py-2 rounded border bg-white hover:border-blue-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Previous
+                        </button>
+
+                        {getPageNumbers(page, totalPages).map((p, i) =>
+                            p === "..." ? (
+                                <span key={`dots-${i}`} className="px-2 text-gray-500">
+                                    ...
+                                </span>
+                            ) : (
+                                <button
+                                    key={p}
+                                    onClick={() => updateParam("page", String(p))}
+                                    className={pillClass(p === page)}
+                                >
+                                    {p}
+                                </button>
+                            )
+                        )}
+
+                        <button
+                            disabled={page === totalPages}
+                            onClick={() => updateParam("page", String(page + 1))}
+                            className="px-4 py-2 rounded border bg-white hover:border-blue-600 disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                            Next
+                        </button>
+                    </div>
+                )}
             </div>
         </div>
     );
