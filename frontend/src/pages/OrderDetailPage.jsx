@@ -141,9 +141,23 @@ function OrderDetailPage() {
                             </li>
                         ))}
                     </ul>
-                    <div className="border-t pt-3 mt-2 flex justify-between font-bold">
-                        <span>Total</span>
-                        <span>₹{Number(order.total_amount).toLocaleString("en-IN")}</span>
+                    <div className="border-t pt-3 mt-2 text-sm space-y-1">
+                        {Number(order.discount_amount) > 0 && (
+                            <>
+                                <div className="flex justify-between">
+                                    <span>Subtotal</span>
+                                    <span>₹{Number(order.subtotal).toLocaleString("en-IN")}</span>
+                                </div>
+                                <div className="flex justify-between text-green-700">
+                                    <span>Discount ({order.coupon_code})</span>
+                                    <span>-₹{Number(order.discount_amount).toLocaleString("en-IN")}</span>
+                                </div>
+                            </>
+                        )}
+                        <div className="flex justify-between font-bold text-base">
+                            <span>Total</span>
+                            <span>₹{Number(order.total_amount).toLocaleString("en-IN")}</span>
+                        </div>
                     </div>
                 </div>
 

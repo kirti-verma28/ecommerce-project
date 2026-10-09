@@ -5,6 +5,8 @@ import { useCart } from "../context/CartContext";
 import AddressForm from "../components/AddressForm";
 import Loader from "../components/Loader";
 
+const rupees = (n) => `₹${Number(n).toLocaleString("en-IN")}`;
+
 function CheckoutPage() {
   const nav = useNavigate();
   const { cartItems, total, clearCart } = useCart();
@@ -14,6 +16,11 @@ function CheckoutPage() {
   const [selectedId, setSelectedId] = useState(null);
   const [showForm, setShowForm] = useState(false);
   const [loadingAddresses, setLoadingAddresses] = useState(true);
+
+  const [couponInput, setCouponInput] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState(null);
+  const [couponMsg, setCouponMsg] = useState(null);
+
   const [placing, setPlacing] = useState(false);
   const [error, setError] = useState("");
 
@@ -40,6 +47,35 @@ function CheckoutPage() {
     setError("");
   };
 
+  const applyCoupon = async () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) return;
+    setCouponMsg(null);
+    try {
+      const res = await authFetch(`${BASEURL}/api/coupons/apply/`, {
+        method: "POST",
+        body: JSON.stringify({ code }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setAppliedCoupon({ code: data.code, discount: Number(data.discount) });
+        setCouponMsg({ text: `Coupon ${data.code} applied. You save ${rupees(data.discount)}.`, isError: false });
+      } else {
+        setAppliedCoupon(null);
+        setCouponMsg({ text: data.error || "Could not apply the coupon", isError: true });
+      }
+    } catch (err) {
+      console.error(err);
+      setCouponMsg({ text: "Could not apply the coupon", isError: true });
+    }
+  };
+
+  const removeCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput("");
+    setCouponMsg(null);
+  };
+
   const placeOrder = async () => {
     if (!selectedId) {
       setError("Please select a delivery address");
@@ -50,7 +86,11 @@ function CheckoutPage() {
     try {
       const res = await authFetch(`${BASEURL}/api/orders/create/`, {
         method: "POST",
-        body: JSON.stringify({ address_id: selectedId, payment_method: "COD" }),
+        body: JSON.stringify({
+          address_id: selectedId,
+          payment_method: "COD",
+          coupon_code: appliedCoupon ? appliedCoupon.code : "",
+        }),
       });
       const data = await res.json();
       if (res.ok) {
@@ -79,6 +119,9 @@ function CheckoutPage() {
       </div>
     );
   }
+
+  const discount = appliedCoupon ? appliedCoupon.discount : 0;
+  const payable = total - discount;
 
   return (
     <div className="min-h-screen bg-gray-100 pt-24 pb-10">
@@ -147,13 +190,56 @@ function CheckoutPage() {
             {cartItems.map((item) => (
               <li key={item.id} className="flex justify-between gap-2">
                 <span className="truncate">{item.product_name} × {item.quantity}</span>
-                <span>₹{(Number(item.product_price) * item.quantity).toLocaleString("en-IN")}</span>
+                <span>{rupees(Number(item.product_price) * item.quantity)}</span>
               </li>
             ))}
           </ul>
-          <div className="border-t pt-3 flex justify-between font-bold">
-            <span>Total</span>
-            <span>₹{total.toLocaleString("en-IN")}</span>
+
+          {/* Coupon */}
+          <div className="border-t pt-3 mb-3">
+            {appliedCoupon ? (
+              <div className="flex justify-between items-center text-sm">
+                <span className="text-green-700 font-medium">{appliedCoupon.code} applied</span>
+                <button onClick={removeCoupon} className="text-red-600 hover:underline">Remove</button>
+              </div>
+            ) : (
+              <div className="flex gap-2">
+                <input
+                  value={couponInput}
+                  onChange={(e) => setCouponInput(e.target.value.toUpperCase())}
+                  placeholder="Coupon code"
+                  className="flex-1 min-w-0 border border-gray-300 rounded px-3 py-2 text-sm"
+                />
+                <button
+                  onClick={applyCoupon}
+                  className="bg-gray-800 hover:bg-gray-900 text-white px-4 rounded text-sm"
+                >
+                  Apply
+                </button>
+              </div>
+            )}
+            {couponMsg && (
+              <p className={`mt-2 text-xs ${couponMsg.isError ? "text-red-600" : "text-green-700"}`}>
+                {couponMsg.text}
+              </p>
+            )}
+          </div>
+
+          <div className="border-t pt-3 text-sm space-y-1">
+            <div className="flex justify-between">
+              <span>Subtotal</span>
+              <span>{rupees(total)}</span>
+            </div>
+            {discount > 0 && (
+              <div className="flex justify-between text-green-700">
+                <span>Discount</span>
+                <span>-{rupees(discount)}</span>
+              </div>
+            )}
+            <div className="flex justify-between font-bold text-base pt-1">
+              <span>Total</span>
+              <span>{rupees(payable)}</span>
+            </div>
           </div>
 
           {error && <p className="mt-3 text-sm text-red-600">{error}</p>}

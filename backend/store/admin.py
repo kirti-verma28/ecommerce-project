@@ -2,7 +2,7 @@ from django.contrib import admin
 from django.db.models import F
 
 from .models import (
-    Address, Category, Order, OrderItem, Product, ProductImage, Review, UserProfile, WishlistItem,
+    Address, Category, Order, OrderItem, Product, ProductImage, Review, UserProfile, WishlistItem, Coupon,
 )
 
 
@@ -53,3 +53,7 @@ admin.site.register(UserProfile)
 admin.site.register(OrderItem)
 admin.site.register(Address)
 admin.site.register(WishlistItem)
+
+@admin.register(Coupon)
+class CouponAdmin(admin.ModelAdmin):
+    list_display = ("code", "discount_type", "value", "min_order_amount", "active", "used_count", "usage_limit", "valid_until")

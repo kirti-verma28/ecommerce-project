@@ -1,5 +1,5 @@
 from decimal import Decimal, InvalidOperation
-
+from . import emails
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Avg, Count, F
@@ -10,7 +10,7 @@ from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticate
 from rest_framework.response import Response
 
 from .models import (
-    Address, Cart, CartItem, Category, Order, OrderItem, Product, Review, WishlistItem,
+    Address, Cart, CartItem, Category, Order, OrderItem, Product, Review, WishlistItem, Coupon,
 )
 from .serializers import (
     AddressSerializer,
@@ -210,6 +210,8 @@ def create_order(request):
     except (Address.DoesNotExist, ValueError, TypeError):
         return Response({'error': 'Please select a delivery address'}, status=400)
 
+    coupon_code = str(request.data.get('coupon_code', '')).strip().upper()
+
     with transaction.atomic():
         cart, _ = Cart.objects.get_or_create(user=request.user)
         items = list(cart.items.select_related('product'))
@@ -230,10 +232,26 @@ def create_order(request):
                     status=400,
                 )
 
-        total = sum(products[i.product_id].price * i.quantity for i in items)
+        subtotal = sum(products[i.product_id].price * i.quantity for i in items)
+
+        # The discount is always calculated on the server, never trusted from the browser
+        coupon = None
+        discount = Decimal('0.00')
+        if coupon_code:
+            try:
+                coupon = Coupon.objects.select_for_update().get(code=coupon_code)
+                discount = coupon.get_discount(subtotal)
+            except Coupon.DoesNotExist:
+                return Response({'error': 'Invalid coupon code'}, status=400)
+            except ValueError as e:
+                return Response({'error': str(e)}, status=400)
+
         order = Order.objects.create(
             user=request.user,
-            total_amount=total,
+            subtotal=subtotal,
+            discount_amount=discount,
+            coupon_code=coupon.code if coupon else '',
+            total_amount=subtotal - discount,
             payment_method='COD',
             ship_name=address.full_name,
             ship_phone=address.phone,
@@ -254,8 +272,13 @@ def create_order(request):
             product.stock -= item.quantity
             product.save(update_fields=['stock'])
 
+        if coupon:
+            coupon.used_count += 1
+            coupon.save(update_fields=['used_count'])
+
         cart.items.all().delete()
 
+    emails.send_order_confirmation(order)
     return Response({'message': 'Order created successfully', 'order_id': order.id})
 
 @api_view(['POST'])
@@ -342,7 +365,11 @@ def cancel_order(request, pk):
         # Put the items back into stock
         for item in order.items.all():
             Product.objects.filter(id=item.product_id).update(stock=F('stock') + item.quantity)
-
+        # Give the coupon use back
+        if order.coupon_code:
+            Coupon.objects.filter(code=order.coupon_code, used_count__gt=0).update(
+                used_count=F('used_count') - 1
+            )
         order.status = 'CANCELLED'
         order.save(update_fields=['status'])
 
@@ -373,3 +400,29 @@ def toggle_wishlist(request):
     if not created:
         item.delete()
     return Response({'in_wishlist': created})
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def apply_coupon(request):
+    code = str(request.data.get('code', '')).strip().upper()
+    try:
+        coupon = Coupon.objects.get(code=code)
+    except Coupon.DoesNotExist:
+        return Response({'error': 'Invalid coupon code'}, status=400)
+
+    cart, _ = Cart.objects.get_or_create(user=request.user)
+    if not cart.items.exists():
+        return Response({'error': 'Your cart is empty'}, status=400)
+    subtotal = cart.total
+
+    try:
+        discount = coupon.get_discount(subtotal)
+    except ValueError as e:
+        return Response({'error': str(e)}, status=400)
+
+    return Response({
+        'code': coupon.code,
+        'discount': discount,
+        'subtotal': subtotal,
+        'total': subtotal - discount,
+    })

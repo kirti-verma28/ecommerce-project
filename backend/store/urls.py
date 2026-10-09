@@ -24,4 +24,5 @@ urlpatterns = [
     path('register/', views.register_view),
     path('token/', TokenObtainPairView.as_view(), name='token_obtain_pair'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token_refresh'),
+    path('coupons/apply/', views.apply_coupon),
 ]
