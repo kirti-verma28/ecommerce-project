@@ -3,11 +3,12 @@ from . import emails
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Avg, Count, F
-from rest_framework import filters, generics, status
+from rest_framework import filters, generics, serializers, status
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.permissions import AllowAny, IsAuthenticated, IsAuthenticatedOrReadOnly
 from rest_framework.response import Response
+from drf_spectacular.utils import extend_schema, inline_serializer
 
 from .models import (
     Address, Cart, CartItem, Category, Order, OrderItem, Product, Review, WishlistItem, Coupon,
@@ -23,7 +24,9 @@ from .serializers import (
     ReviewSerializer,
     UserSerializer,
 )
-
+# Small serializers that only describe request and response bodies in the API docs
+MessageResponse = inline_serializer("MessageResponse", {"message": serializers.CharField()})
+ProductIdRequest = inline_serializer("ProductIdRequest", {"product_id": serializers.IntegerField()})
 
 
 def product_queryset():
@@ -67,7 +70,7 @@ class ProductListView(generics.ListAPIView):
                     pass  # ignore a price that is not a number
         return qs
 
-
+@extend_schema(responses=ProductSerializer)
 @api_view(['GET'])
 def get_product(request, pk):
     try:
@@ -76,7 +79,7 @@ def get_product(request, pk):
         return Response({'error': 'Product not found'}, status=404)
     return Response(ProductSerializer(product, context={'request': request}).data)
 
-
+@extend_schema(responses=ProductSerializer(many=True))
 @api_view(['GET'])
 def get_similar_products(request, pk):
     try:
@@ -91,7 +94,8 @@ def get_similar_products(request, pk):
     )
     return Response(ProductSerializer(similar, many=True, context={'request': request}).data)
 
-
+@extend_schema(methods=["GET"], responses=ReviewSerializer(many=True))
+@extend_schema(methods=["POST"], request=ReviewSerializer, responses={201: ReviewSerializer})
 @api_view(['GET', 'POST'])
 @permission_classes([IsAuthenticatedOrReadOnly])
 def product_reviews(request, pk):
@@ -117,14 +121,14 @@ def product_reviews(request, pk):
     )
     return Response(ReviewSerializer(review).data, status=status.HTTP_201_CREATED)
 
-
+@extend_schema(responses=CategorySerializer(many=True))
 @api_view(['GET'])
 def get_categories(request):
     categories = Category.objects.all()
     serializer = CategorySerializer(categories, many=True)
     return Response(serializer.data)
 
-
+@extend_schema(responses=CartSerializer)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_cart(request):
@@ -132,7 +136,10 @@ def get_cart(request):
     serializer = CartSerializer(cart)
     return Response(serializer.data)
 
-
+@extend_schema(
+    request=ProductIdRequest,
+    responses=inline_serializer("AddToCartResponse", {"message": serializers.CharField(), "cart": CartSerializer()}),
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def add_to_cart(request):
@@ -154,7 +161,10 @@ def add_to_cart(request):
         item.save()
     return Response({'message': 'Product added to cart', 'cart': CartSerializer(cart).data})
 
-
+@extend_schema(
+    request=inline_serializer("RemoveFromCartRequest", {"item_id": serializers.IntegerField()}),
+    responses=MessageResponse,
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def remove_from_cart(request):
@@ -163,7 +173,13 @@ def remove_from_cart(request):
     CartItem.objects.filter(id=item_id, cart__user=request.user).delete()
     return Response({'message': 'Item removed from cart'})
 
-
+@extend_schema(
+    request=inline_serializer(
+        "UpdateCartRequest",
+        {"item_id": serializers.IntegerField(), "quantity": serializers.IntegerField()},
+    ),
+    responses=CartItemSerializer,
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def update_cart_quantity(request):
@@ -194,7 +210,19 @@ def update_cart_quantity(request):
     item.save()
     return Response(CartItemSerializer(item).data)
 
-
+@extend_schema(
+    request=inline_serializer(
+        "CreateOrderRequest",
+        {
+            "address_id": serializers.IntegerField(),
+            "payment_method": serializers.CharField(default="COD"),
+            "coupon_code": serializers.CharField(required=False),
+        },
+    ),
+    responses=inline_serializer(
+        "CreateOrderResponse", {"message": serializers.CharField(), "order_id": serializers.IntegerField()}
+    ),
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def create_order(request):
@@ -281,6 +309,10 @@ def create_order(request):
     emails.send_order_confirmation(order)
     return Response({'message': 'Order created successfully', 'order_id': order.id})
 
+@extend_schema(
+    request=RegisterSerializer,
+    responses={201: inline_serializer("RegisterResponse", {"message": serializers.CharField(), "user": UserSerializer()})},
+)
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def register_view(request):
@@ -328,7 +360,7 @@ class AddressDetailView(generics.RetrieveUpdateDestroyAPIView):
 
 
 # ---------- Orders ----------
-
+@extend_schema(responses=OrderSerializer(many=True))
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def my_orders(request):
@@ -339,7 +371,7 @@ def my_orders(request):
     )
     return Response(OrderSerializer(orders, many=True, context={'request': request}).data)
 
-
+@extend_schema(responses=OrderSerializer)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def order_detail(request, pk):
@@ -349,7 +381,7 @@ def order_detail(request, pk):
         return Response({'error': 'Order not found'}, status=404)
     return Response(OrderSerializer(order, context={'request': request}).data)
 
-
+@extend_schema(request=None, responses=OrderSerializer)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def cancel_order(request, pk):
@@ -377,7 +409,7 @@ def cancel_order(request, pk):
 
 
 # ---------- Wishlist ----------
-
+@extend_schema(responses=ProductSerializer(many=True))
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def get_wishlist(request):
@@ -387,7 +419,10 @@ def get_wishlist(request):
     ordered = [products[i] for i in ids if i in products]
     return Response(ProductSerializer(ordered, many=True, context={'request': request}).data)
 
-
+@extend_schema(
+    request=ProductIdRequest,
+    responses=inline_serializer("WishlistToggleResponse", {"in_wishlist": serializers.BooleanField()}),
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def toggle_wishlist(request):
@@ -401,6 +436,18 @@ def toggle_wishlist(request):
         item.delete()
     return Response({'in_wishlist': created})
 
+@extend_schema(
+    request=inline_serializer("ApplyCouponRequest", {"code": serializers.CharField()}),
+    responses=inline_serializer(
+        "ApplyCouponResponse",
+        {
+            "code": serializers.CharField(),
+            "discount": serializers.DecimalField(max_digits=10, decimal_places=2),
+            "subtotal": serializers.DecimalField(max_digits=10, decimal_places=2),
+            "total": serializers.DecimalField(max_digits=10, decimal_places=2),
+        },
+    ),
+)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def apply_coupon(request):

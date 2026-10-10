@@ -14,6 +14,7 @@ from pathlib import Path
 import os 
 from dotenv import load_dotenv
 from datetime import timedelta
+import sys
 load_dotenv()
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -24,7 +25,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.1/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-not-for-production")
+SECRET_KEY = os.getenv("SECRET_KEY", "dev-only-secret-key-not-for-production-use-1234567890")
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv("DEBUG", "False") == "True"
 
@@ -43,6 +44,7 @@ INSTALLED_APPS = [
     'corsheaders',
     'rest_framework',
     'rest_framework_simplejwt',
+    'drf_spectacular',
     'store',
 ]
 
@@ -156,6 +158,7 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': (
         'rest_framework.permissions.AllowAny',
     ),
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 SIMPLE_JWT = {
@@ -182,3 +185,14 @@ else:
 BREVO_API_KEY = os.getenv("BREVO_API_KEY", "")
 EMAIL_FROM = os.getenv("EMAIL_FROM", "")
 EMAIL_FROM_NAME = os.getenv("EMAIL_FROM_NAME", "KirtiCart")
+
+if "test" in sys.argv:
+    # Faster password hashing, only while running tests
+    PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'KirtiCart API',
+    'DESCRIPTION': 'REST API for the KirtiCart online store: products, cart, orders, reviews, wishlist and coupons.',
+    'VERSION': '1.0.0',
+    'SERVE_INCLUDE_SCHEMA': False,
+}
